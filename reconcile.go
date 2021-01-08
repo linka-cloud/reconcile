@@ -109,3 +109,15 @@ type ReconcilerFunc func(ctx context.Context, o interface{}) (Result, error)
 func (r ReconcilerFunc) Reconcile(ctx context.Context, o interface{}) (Result, error) {
 	return r(ctx, o)
 }
+
+// Defaulter must be implemented by types to support setting default value on its not defined fields before create operations
+type Defaulter interface {
+	// Defaults set the default value of the resource fields when not defined
+	Default()
+}
+
+// Validator must be implemented by types to support validation before read / update operations
+type Validator interface {
+	// Validate returns an error when fields values does not meet required conditions
+	Validate() error
+}
