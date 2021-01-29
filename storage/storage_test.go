@@ -65,6 +65,7 @@ func TestStorage(t *testing.T) {
 			assert.Nil(e.Old())
 			assert.Equal("id", e.New().(*Data).ID)
 			assert.Equal(42, e.New().(*Data).Value)
+			assert.Equal(0, e.Revision())
 		case 2:
 			assert.Equal(reconcile.Updated, e.Type())
 			assert.NotNil(e.Old())
@@ -73,12 +74,14 @@ func TestStorage(t *testing.T) {
 			require.NotNil(e.New())
 			assert.Equal("id", e.New().(*Data).ID)
 			assert.Equal(43, e.New().(*Data).Value)
+			assert.Equal(1, e.Revision())
 		case 3:
 			assert.Equal(reconcile.Deleted, e.Type())
 			require.NotNil(e.Old())
 			assert.Nil(e.New())
 			assert.Equal("id", e.Old().(*Data).ID)
 			assert.Equal(43, e.Old().(*Data).Value)
+			assert.Equal(1, e.Revision())
 			time.AfterFunc(time.Second, cancel)
 		}
 	}

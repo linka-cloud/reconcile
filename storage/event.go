@@ -6,10 +6,11 @@ import (
 )
 
 type event struct {
-	key string
-	typ reconcile.EventType
-	old object.Any
-	new object.Any
+	key      string
+	typ      reconcile.EventType
+	old      object.Any
+	new      object.Any
+	revision int64
 }
 
 func (e *event) Type() reconcile.EventType {
@@ -25,5 +26,5 @@ func (e *event) Old() object.Any {
 }
 
 func (e *event) Revision() int {
-	return 0
+	return int(e.revision)
 }
