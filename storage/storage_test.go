@@ -38,6 +38,7 @@ func TestStorage(t *testing.T) {
 	defer func() {
 		require.NoError(s.Close())
 	}()
+	require.Error(s.Create(context.Background(), 42))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	w, err := s.Watch(ctx, &Data{})
@@ -47,6 +48,12 @@ func TestStorage(t *testing.T) {
 	o := &Data{ID: "id", Value: 42}
 	go func() {
 		require.NoError(s.Create(ctx, o))
+		res := &Data{ID: "id"}
+		assert.Error(s.Read(ctx, *res))
+		assert.Error(s.Read(ctx, &Data{}))
+		assert.NoError(s.Read(ctx, res))
+		assert.Equal(o.ID, res.ID)
+		assert.Equal(o.Value, res.Value)
 		require.NoError(s.Create(ctx, &Data2{ID: "other"}))
 		l, err := s.List(ctx, &Data{})
 		require.NoError(err)
@@ -54,6 +61,7 @@ func TestStorage(t *testing.T) {
 		assert.Equal(o, l[0])
 		require.NoError(s.Update(ctx, &Data{ID: "id", Value: 43}))
 		require.NoError(s.Delete(ctx, o))
+		require.Error(s.Update(ctx, o))
 	}()
 	for e := range w {
 		count++
