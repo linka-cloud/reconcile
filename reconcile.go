@@ -86,10 +86,48 @@ type Informer interface {
 	Close() error
 }
 
+type InformerFunc struct {
+	// OnCreate is called when a resource is created
+	OnCreateFunc func(new object.Any) error
+	// OnUpdate is called when a resource is modified
+	OnUpdateFunc func(new object.Any, old object.Any) error
+	// OnDelete is called when a resource is deleted
+	OnDeleteFunc func(old object.Any) error
+	CloseFunc    func() error
+}
+
+func (i *InformerFunc) OnCreate(new object.Any) error {
+	if i.OnCreateFunc != nil {
+		return i.OnCreateFunc(new)
+	}
+	return nil
+}
+
+func (i *InformerFunc) OnUpdate(new object.Any, old object.Any) error {
+	if i.OnUpdateFunc != nil {
+		return i.OnUpdateFunc(new, old)
+	}
+	return nil
+}
+
+func (i *InformerFunc) OnDelete(old object.Any) error {
+	if i.OnDeleteFunc != nil {
+		return i.OnDeleteFunc(old)
+	}
+	return nil
+}
+
+func (i *InformerFunc) Close() error {
+	if i.CloseFunc != nil {
+		return i.CloseFunc()
+	}
+	return nil
+}
+
 // Cache is read-only in-memory storage providing resource watching through the Informer interface
 type Cache interface {
 	RStorage
-	Informer
+	Register(ctx context.Context, resource object.Any, i Informer) error
 }
 
 // Result is the object returned by the Reconcile function
@@ -118,4 +156,12 @@ func (r ReconcilerFunc) Reconcile(ctx context.Context, o object.Any) (Result, er
 	return r(ctx, o)
 }
 
-
+type Controller interface {
+	With(storage Cache) Controller
+	Workers(num int) Controller
+	For(resource object.Any) Controller
+	Register(reconciler Reconciler) Controller
+	Run() error
+	Close() error
+	Error() error
+}

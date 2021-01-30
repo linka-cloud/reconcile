@@ -23,13 +23,19 @@ const (
 	channelBuffer = 100
 )
 
+var (
+	_ reconcile.RStorage = &storage{}
+	_ reconcile.WStorage = &storage{}
+	_ reconcile.Cache    = &storage{}
+)
+
 type storage struct {
 	o  *options
 	kv store.Store
 	ps pubsub.Publisher
 }
 
-func New(opts ...Option) (reconcile.Storage, error) {
+func New(opts ...Option) (*storage, error) {
 	o := &options{
 		Path:  filepath.Join(os.TempDir(), "reconcile"),
 		Codec: json.New(),
@@ -182,6 +188,38 @@ func (s *storage) Delete(ctx context.Context, resource object.Any) error {
 		return err
 	}
 	s.ps.Publish(&event{key: key, typ: reconcile.Deleted, old: old, revision: r})
+	return nil
+}
+
+func (s *storage) Register(ctx context.Context, res object.Any, i reconcile.Informer) error {
+	w, err := s.Watch(ctx, res)
+	if err != nil {
+		return err
+	}
+	go func() {
+		defer i.Close()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case e := <-w:
+				switch e.Type() {
+				case reconcile.Created:
+					if err := i.OnCreate(e.New()); err != nil {
+						return
+					}
+				case reconcile.Updated:
+					if err := i.OnUpdate(e.New(), e.Old()); err != nil {
+						return
+					}
+				case reconcile.Deleted:
+					if err := i.OnDelete(e.Old()); err != nil {
+						return
+					}
+				}
+			}
+		}
+	}()
 	return nil
 }
 
