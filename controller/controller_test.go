@@ -54,18 +54,17 @@ func TestController(t *testing.T) {
 
 	fn := func(ctx context.Context, res object.Any) (reconcile.Result, error) {
 		t.Logf("reconcile request")
+		d, ok := res.(*Data)
+		require.True(ok)
+		if d.Value == 42 {
+			t.Log("got value 42 reconciled")
+			return reconcile.Result{}, nil
+		}
 		n := atomic.AddInt32(&routinesCount, 1)
 		defer atomic.AddInt32(&routinesCount, -1)
 		assert.LessOrEqual(n, int32(routinesMax))
-		d, ok := res.(*Data)
-		require.True(ok)
 		c := atomic.AddInt32(&counter, 1)
 		t.Logf("reconcile calls: %d (routines %d)", c, n)
-		if d.Value == 42 {
-			t.Log("got value 42 reconciled")
-			c = atomic.AddInt32(&counter, -1)
-			return reconcile.Result{}, nil
-		}
 		switch c {
 		case 1, 3:
 			require.NoError(s.Read(ctx, d))

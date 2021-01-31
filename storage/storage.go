@@ -144,7 +144,7 @@ func (s *storage) Create(ctx context.Context, resource object.Any) error {
 	if err := s.kv.Put(key, b, nil); err != nil {
 		return nil
 	}
-	s.ps.Publish(&event{key: key, typ: reconcile.Created, new: resource, revision: 0})
+	go s.ps.Publish(&event{key: key, typ: reconcile.Created, new: resource, revision: 0})
 	return nil
 }
 
@@ -173,7 +173,7 @@ func (s *storage) Update(ctx context.Context, resource object.Any) error {
 	if err := s.kv.Put(key, b, nil); err != nil {
 		return nil
 	}
-	s.ps.Publish(&event{key: key, typ: reconcile.Updated, old: old, new: resource, revision: r + 1})
+	go s.ps.Publish(&event{key: key, typ: reconcile.Updated, old: old, new: resource, revision: r + 1})
 	return nil
 }
 
@@ -194,7 +194,7 @@ func (s *storage) Delete(ctx context.Context, resource object.Any) error {
 	if err := s.kv.Delete(key); err != nil {
 		return err
 	}
-	s.ps.Publish(&event{key: key, typ: reconcile.Deleted, old: old, revision: r})
+	go s.ps.Publish(&event{key: key, typ: reconcile.Deleted, old: old, revision: r})
 	return nil
 }
 
