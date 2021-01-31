@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"go.linka.cloud/libkv/store/boltdb/v2"
+	_ "go.linka.cloud/libkv/store/boltdb/v2"
+	"go.linka.cloud/libkv/v2"
 	"go.linka.cloud/libkv/v2/store"
 	"google.golang.org/protobuf/proto"
 
@@ -27,6 +28,8 @@ var (
 	_ reconcile.RStorage = &storage{}
 	_ reconcile.WStorage = &storage{}
 	_ reconcile.Cache    = &storage{}
+
+	DefaultPath = filepath.Join(os.TempDir(), "reconcile")
 )
 
 type storage struct {
@@ -37,13 +40,17 @@ type storage struct {
 
 func New(opts ...Option) (*storage, error) {
 	o := &options{
-		Path:  filepath.Join(os.TempDir(), "reconcile"),
-		Codec: json.New(),
+		backend:   store.BOLTDB,
+		endpoints: []string{DefaultPath},
+		codec:     json.New(),
+		config: &store.Config{
+			Bucket: "reconcile",
+		},
 	}
 	for _, v := range opts {
 		v(o)
 	}
-	kv, err := boltdb.New([]string{o.Path}, &store.Config{Bucket: "reconcile"})
+	kv, err := libkv.NewStore(o.backend, o.endpoints, o.config)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +71,7 @@ func (s *storage) Read(ctx context.Context, resource object.Any) error {
 	if err != nil {
 		return err
 	}
-	return s.o.Codec.Unmarshal(b, resource)
+	return s.o.codec.Unmarshal(b, resource)
 }
 
 func (s *storage) List(ctx context.Context, resource object.Any) ([]object.Any, error) {
@@ -83,7 +90,7 @@ func (s *storage) List(ctx context.Context, resource object.Any) ([]object.Any, 
 		if err != nil {
 			return nil, err
 		}
-		if err := s.o.Codec.Unmarshal(b, o); err != nil {
+		if err := s.o.codec.Unmarshal(b, o); err != nil {
 			return nil, err
 		}
 		out[i] = o
@@ -126,7 +133,7 @@ func (s *storage) Create(ctx context.Context, resource object.Any) error {
 	if err != nil {
 		return err
 	}
-	b, err := s.o.Codec.Marshal(resource)
+	b, err := s.o.codec.Marshal(resource)
 	if err != nil {
 		return err
 	}
@@ -155,10 +162,10 @@ func (s *storage) Update(ctx context.Context, resource object.Any) error {
 		return err
 	}
 	old := reflect.New(reflect.TypeOf(resource).Elem()).Interface()
-	if err := s.o.Codec.Unmarshal(b, old); err != nil {
+	if err := s.o.codec.Unmarshal(b, old); err != nil {
 		return err
 	}
-	b, err = s.o.Codec.Marshal(resource)
+	b, err = s.o.codec.Marshal(resource)
 	if err != nil {
 		return err
 	}
@@ -181,7 +188,7 @@ func (s *storage) Delete(ctx context.Context, resource object.Any) error {
 	}
 	b, r, err := s.decode(kv.Value)
 	old := reflect.New(reflect.TypeOf(resource).Elem()).Interface()
-	if err := s.o.Codec.Unmarshal(b, old); err != nil {
+	if err := s.o.codec.Unmarshal(b, old); err != nil {
 		return err
 	}
 	if err := s.kv.Delete(key); err != nil {
@@ -191,7 +198,22 @@ func (s *storage) Delete(ctx context.Context, resource object.Any) error {
 	return nil
 }
 
-func (s *storage) Register(ctx context.Context, res object.Any, i reconcile.Informer) error {
+func (s *storage) Register(ctx context.Context, res object.Any, i reconcile.Informer, opts ...reconcile.InformerOption) error {
+	o := &reconcile.InformerOptions{}
+	for _, v := range opts {
+		v(o)
+	}
+	if o.List {
+		l, err := s.List(ctx, res)
+		if err != nil {
+			return err
+		}
+		for _, v := range l {
+			if err := i.OnCreate(v); err != nil {
+				return err
+			}
+		}
+	}
 	w, err := s.Watch(ctx, res)
 	if err != nil {
 		return err
@@ -203,6 +225,9 @@ func (s *storage) Register(ctx context.Context, res object.Any, i reconcile.Info
 			case <-ctx.Done():
 				return
 			case e := <-w:
+				if e == nil {
+					continue
+				}
 				switch e.Type() {
 				case reconcile.Created:
 					if err := i.OnCreate(e.New()); err != nil {

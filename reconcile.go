@@ -127,7 +127,7 @@ func (i *InformerFunc) Close() error {
 // Cache is read-only in-memory storage providing resource watching through the Informer interface
 type Cache interface {
 	RStorage
-	Register(ctx context.Context, resource object.Any, i Informer) error
+	Register(ctx context.Context, resource object.Any, i Informer, opts ...InformerOption) error
 }
 
 // Result is the object returned by the Reconcile function
@@ -163,5 +163,5 @@ type Controller interface {
 	Register(reconciler Reconciler) Controller
 	Run() error
 	Close() error
-	Error() error
+	Error() (Controller, error)
 }

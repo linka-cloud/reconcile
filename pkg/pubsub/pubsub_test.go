@@ -74,7 +74,7 @@ func (s *testSubscriber) Wait() error {
 	return <-s.ch
 }
 
-func newTestSubscriber(p *publisher) *testSubscriber {
+func newTestSubscriber(p Publisher) *testSubscriber {
 	ts := &testSubscriber{
 		dataCh: p.Subscribe(),
 		ch:     make(chan error),

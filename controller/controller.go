@@ -26,7 +26,7 @@ type ctrl struct {
 }
 
 func New(ctx context.Context) reconcile.Controller {
-	return &ctrl{queue: workqueue.NewDelayingQueue(), workers: 1, stop: make(chan struct{})}
+	return &ctrl{ctx: ctx, queue: workqueue.NewDelayingQueue(), workers: 1, stop: make(chan struct{})}
 }
 
 func (c *ctrl) With(s reconcile.Cache) reconcile.Controller {
@@ -106,7 +106,7 @@ func (c *ctrl) Run() error {
 			c.queue.Add(old)
 			return nil
 		},
-	}); err != nil {
+	}, reconcile.WithList(true)); err != nil {
 		c.error = multierr.Append(c.error, err)
 	}
 	if c.error != nil {
@@ -116,36 +116,48 @@ func (c *ctrl) Run() error {
 	c.running = true
 	guard := make(chan struct{}, c.workers)
 	c.m.Unlock()
+	items := make(chan interface{})
+	go func() {
+		for {
+			item, shut := c.queue.Get()
+			if shut {
+				c.stop <- struct{}{}
+				return
+			}
+			items <- item
+		}
+	}()
 	for {
 		select {
+		case <-c.ctx.Done():
+			c.m.Lock()
+			c.running = false
+			c.m.Unlock()
+			return c.ctx.Err()
 		case <-c.stop:
 			c.m.Lock()
 			c.running = false
 			c.m.Unlock()
 			return nil
-		default:
-		}
-		if c.reconciler == nil {
-			continue
-		}
-		item, shut := c.queue.Get()
-		if shut {
-			return nil
-		}
-		guard <- struct{}{}
-		go func(i interface{}) {
-			r, err := c.reconciler.Reconcile(c.ctx, i)
-			if err != nil || r.Requeue {
-				c.queue.AddAfter(item, r.RequeueAfter)
+		case item := <-items:
+			if c.reconciler == nil {
+				continue
 			}
-			c.queue.Done(i)
-			<-guard
-		}(item)
+			guard <- struct{}{}
+			go func(i interface{}) {
+				r, err := c.reconciler.Reconcile(c.ctx, i)
+				if err != nil || r.Requeue {
+					c.queue.AddAfter(item, r.RequeueAfter)
+				}
+				c.queue.Done(i)
+				<-guard
+			}(item)
+		}
 	}
 }
 
-func (c *ctrl) Error() error {
+func (c *ctrl) Error() (reconcile.Controller, error) {
 	c.m.RLock()
 	defer c.m.RUnlock()
-	return c.error
+	return c, c.error
 }
