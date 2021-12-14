@@ -16,6 +16,7 @@ package reconcile
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"go.linka.cloud/reconcile/object"
@@ -178,4 +179,8 @@ type Controller interface {
 	Run() error
 	Close() error
 	Error() (Controller, error)
+}
+
+func IsErrNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "not found")
 }
