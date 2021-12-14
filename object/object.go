@@ -59,7 +59,7 @@ type Namespaced interface {
 
 // Defaulter must be implemented by types to support setting default value on its not defined fields before create operations
 type Defaulter interface {
-	// Defaults set the default value of the resource fields when not defined
+	// Default set the default value of the resource fields when not defined
 	Default()
 }
 
