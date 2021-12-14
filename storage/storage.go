@@ -22,15 +22,13 @@ import (
 	"strings"
 	"time"
 
-	_ "go.linka.cloud/libkv/store/boltdb/v2"
-	"go.linka.cloud/libkv/v2"
-	"go.linka.cloud/libkv/v2/store"
 	"google.golang.org/protobuf/proto"
 
 	"go.linka.cloud/reconcile"
 	"go.linka.cloud/reconcile/codec/json"
 	"go.linka.cloud/reconcile/object"
 	"go.linka.cloud/reconcile/pkg/pubsub"
+	"go.linka.cloud/reconcile/storage/boltdb"
 	record "go.linka.cloud/reconcile/storage/proto"
 )
 
@@ -48,28 +46,26 @@ var (
 
 type storage struct {
 	o  *options
-	kv store.Store
+	kv KV
 	ps pubsub.Publisher
 }
 
 func New(opts ...Option) (*storage, error) {
 	o := &options{
-		backend:   store.BOLTDB,
-		endpoints: []string{DefaultPath},
-		codec:     json.New(),
-		config: &store.Config{
-			Bucket: "reconcile",
-		},
+		codec: json.New(),
 	}
 	for _, v := range opts {
 		v(o)
 	}
-	kv, err := libkv.NewStore(o.backend, o.endpoints, o.config)
-	if err != nil {
-		return nil, err
+	if o.backend == nil {
+		var err error
+		o.backend, err = boltdb.New(DefaultPath)
+		if err != nil {
+			return nil, err
+		}
 	}
 	ps := pubsub.NewPublisher(time.Second, 100)
-	return &storage{ps: ps, kv: kv, o: o}, nil
+	return &storage{ps: ps, kv: o.backend, o: o}, nil
 }
 
 func (s *storage) Read(ctx context.Context, resource object.Any) error {
@@ -77,11 +73,11 @@ func (s *storage) Read(ctx context.Context, resource object.Any) error {
 	if err != nil {
 		return err
 	}
-	kv, err := s.kv.Get(key)
+	v, err := s.kv.Get(key)
 	if err != nil {
 		return err
 	}
-	b, _, err := s.decode(kv.Value)
+	b, _, err := s.decode(v)
 	if err != nil {
 		return err
 	}
@@ -93,14 +89,14 @@ func (s *storage) List(ctx context.Context, resource object.Any) ([]object.Any, 
 	if err != nil {
 		return nil, err
 	}
-	kvs, err := s.kv.List(p + "/")
+	vs, err := s.kv.List(p + "/")
 	if err != nil {
 		return nil, err
 	}
-	out := make([]object.Any, len(kvs))
-	for i, v := range kvs {
+	out := make([]object.Any, len(vs))
+	for i, v := range vs {
 		o := reflect.New(reflect.TypeOf(resource).Elem()).Interface()
-		b, _, err := s.decode(v.Value)
+		b, _, err := s.decode(v)
 		if err != nil {
 			return nil, err
 		}
@@ -155,7 +151,7 @@ func (s *storage) Create(ctx context.Context, resource object.Any) error {
 	if err != nil {
 		return err
 	}
-	if err := s.kv.Put(key, b, nil); err != nil {
+	if err := s.kv.Put(key, b); err != nil {
 		return nil
 	}
 	go s.ps.Publish(&event{key: key, typ: reconcile.Created, new: resource, revision: 0})
@@ -167,11 +163,11 @@ func (s *storage) Update(ctx context.Context, resource object.Any) error {
 	if err != nil {
 		return err
 	}
-	kv, err := s.kv.Get(key)
+	v, err := s.kv.Get(key)
 	if err != nil {
 		return err
 	}
-	b, r, err := s.decode(kv.Value)
+	b, r, err := s.decode(v)
 	if err != nil {
 		return err
 	}
@@ -184,7 +180,7 @@ func (s *storage) Update(ctx context.Context, resource object.Any) error {
 		return err
 	}
 	b, err = s.encode(b, r+1)
-	if err := s.kv.Put(key, b, nil); err != nil {
+	if err := s.kv.Put(key, b); err != nil {
 		return nil
 	}
 	go s.ps.Publish(&event{key: key, typ: reconcile.Updated, old: old, new: resource, revision: r + 1})
@@ -196,11 +192,11 @@ func (s *storage) Delete(ctx context.Context, resource object.Any) error {
 	if err != nil {
 		return err
 	}
-	kv, err := s.kv.Get(key)
+	v, err := s.kv.Get(key)
 	if err != nil {
 		return err
 	}
-	b, r, err := s.decode(kv.Value)
+	b, r, err := s.decode(v)
 	old := reflect.New(reflect.TypeOf(resource).Elem()).Interface()
 	if err := s.o.codec.Unmarshal(b, old); err != nil {
 		return err
@@ -263,8 +259,7 @@ func (s *storage) Register(ctx context.Context, res object.Any, i reconcile.Info
 }
 
 func (s *storage) Close() error {
-	s.kv.Close()
-	return nil
+	return s.kv.Close()
 }
 
 func (s *storage) encode(b []byte, revision int64) ([]byte, error) {

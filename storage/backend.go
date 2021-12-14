@@ -14,25 +14,10 @@
 
 package storage
 
-import (
-	"go.linka.cloud/reconcile/codec"
-)
-
-type options struct {
-	backend KV
-	codec   codec.Codec
-}
-
-type Option func(*options)
-
-func WithBackend(backend KV) Option {
-	return func(o *options) {
-		o.backend = backend
-	}
-}
-
-func WithCodec(codec codec.Codec) Option {
-	return func(options *options) {
-		options.codec = codec
-	}
+type KV interface {
+	Get(key string) ([]byte, error)
+	Put(key string, value []byte) error
+	List(prefix string) ([][]byte, error)
+	Delete(key string) error
+	Close() error
 }
