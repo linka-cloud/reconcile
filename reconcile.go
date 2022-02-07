@@ -92,42 +92,42 @@ type WStorage interface {
 // Informer holds the storage events callbacks
 type Informer interface {
 	// OnCreate is called when a resource is created
-	OnCreate(new object.Any) error
+	OnCreate(ctx context.Context, new object.Any) error
 	// OnUpdate is called when a resource is modified
-	OnUpdate(new object.Any, old object.Any) error
+	OnUpdate(ctx context.Context, new object.Any, old object.Any) error
 	// OnDelete is called when a resource is deleted
-	OnDelete(old object.Any) error
+	OnDelete(ctx context.Context, old object.Any) error
 
 	Close() error
 }
 
 type InformerFunc struct {
 	// OnCreate is called when a resource is created
-	OnCreateFunc func(new object.Any) error
+	OnCreateFunc func(ctx context.Context, new object.Any) error
 	// OnUpdate is called when a resource is modified
-	OnUpdateFunc func(new object.Any, old object.Any) error
+	OnUpdateFunc func(ctx context.Context, new object.Any, old object.Any) error
 	// OnDelete is called when a resource is deleted
-	OnDeleteFunc func(old object.Any) error
+	OnDeleteFunc func(ctx context.Context, old object.Any) error
 	CloseFunc    func() error
 }
 
-func (i *InformerFunc) OnCreate(new object.Any) error {
+func (i *InformerFunc) OnCreate(ctx context.Context, new object.Any) error {
 	if i.OnCreateFunc != nil {
-		return i.OnCreateFunc(new)
+		return i.OnCreateFunc(ctx, new)
 	}
 	return nil
 }
 
-func (i *InformerFunc) OnUpdate(new object.Any, old object.Any) error {
+func (i *InformerFunc) OnUpdate(ctx context.Context, new object.Any, old object.Any) error {
 	if i.OnUpdateFunc != nil {
-		return i.OnUpdateFunc(new, old)
+		return i.OnUpdateFunc(ctx, new, old)
 	}
 	return nil
 }
 
-func (i *InformerFunc) OnDelete(old object.Any) error {
+func (i *InformerFunc) OnDelete(ctx context.Context, old object.Any) error {
 	if i.OnDeleteFunc != nil {
-		return i.OnDeleteFunc(old)
+		return i.OnDeleteFunc(ctx, old)
 	}
 	return nil
 }

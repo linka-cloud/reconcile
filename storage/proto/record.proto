@@ -16,7 +16,7 @@ syntax = "proto3";
 
 package record;
 
-option go_package = ";record";
+option go_package = "go.linka.cloud/reconcile/storage/proto;record";
 
 message Record {
   bytes data = 1;

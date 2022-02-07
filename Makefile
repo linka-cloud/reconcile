@@ -14,4 +14,4 @@
 
 .PHONY:
 proto:
-	@protoc -I. --go_out=. storage/proto/record.proto
+	@protoc -I. --go_out=paths=source_relative:. storage/proto/record.proto

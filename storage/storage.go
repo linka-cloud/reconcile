@@ -16,6 +16,8 @@ package storage
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -41,7 +43,8 @@ var (
 	_ reconcile.WStorage = &storage{}
 	_ reconcile.Cache    = &storage{}
 
-	DefaultPath = filepath.Join(os.TempDir(), "reconcile")
+	DefaultPath          = filepath.Join(os.TempDir(), "reconcile")
+	ErrNotLatestRevision = errors.New("please apply your changes to the latest revision")
 )
 
 type storage struct {
@@ -171,6 +174,11 @@ func (s *storage) Update(ctx context.Context, resource object.Any) error {
 	if err != nil {
 		return err
 	}
+	if rv, ok := RevisionFromCtx(ctx); ok {
+		if rv != int(r) {
+			return fmt.Errorf("revision from context %d is not the latest: %d: %w", r, rv, ErrNotLatestRevision)
+		}
+	}
 	old := reflect.New(reflect.TypeOf(resource).Elem()).Interface()
 	if err := s.o.codec.Unmarshal(b, old); err != nil {
 		return err
@@ -197,6 +205,14 @@ func (s *storage) Delete(ctx context.Context, resource object.Any) error {
 		return err
 	}
 	b, r, err := s.decode(v)
+	if err != nil {
+		return err
+	}
+	if rv, ok := RevisionFromCtx(ctx); ok {
+		if rv != int(r) {
+			return fmt.Errorf("revision from context %d is not the latest: %d: %w", r, rv, ErrNotLatestRevision)
+		}
+	}
 	old := reflect.New(reflect.TypeOf(resource).Elem()).Interface()
 	if err := s.o.codec.Unmarshal(b, old); err != nil {
 		return err
@@ -219,7 +235,7 @@ func (s *storage) Register(ctx context.Context, res object.Any, i reconcile.Info
 			return err
 		}
 		for _, v := range l {
-			if err := i.OnCreate(v); err != nil {
+			if err := i.OnCreate(ctx, v); err != nil {
 				return err
 			}
 		}
@@ -240,15 +256,15 @@ func (s *storage) Register(ctx context.Context, res object.Any, i reconcile.Info
 				}
 				switch e.Type() {
 				case reconcile.Created:
-					if err := i.OnCreate(e.New()); err != nil {
+					if err := i.OnCreate(ctx, e.New()); err != nil {
 						return
 					}
 				case reconcile.Updated:
-					if err := i.OnUpdate(e.New(), e.Old()); err != nil {
+					if err := i.OnUpdate(ctx, e.New(), e.Old()); err != nil {
 						return
 					}
 				case reconcile.Deleted:
-					if err := i.OnDelete(e.Old()); err != nil {
+					if err := i.OnDelete(ctx, e.Old()); err != nil {
 						return
 					}
 				}

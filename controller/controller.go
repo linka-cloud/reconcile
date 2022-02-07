@@ -17,13 +17,15 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"go.uber.org/multierr"
-	"k8s.io/client-go/util/workqueue"
 
 	"go.linka.cloud/reconcile"
 	"go.linka.cloud/reconcile/object"
+	"go.linka.cloud/reconcile/pkg/workqueue"
+	"go.linka.cloud/reconcile/storage"
 )
 
 type ctrl struct {
@@ -96,6 +98,19 @@ func (c *ctrl) Register(r reconcile.Reconciler) reconcile.Controller {
 	return c
 }
 
+type objectWithRevision struct {
+	object   object.Any
+	revision int
+}
+
+func (c *ctrl) add(ctx context.Context, obj object.Any) {
+	o := objectWithRevision{object: obj}
+	if r, ok := storage.RevisionFromCtx(ctx); ok {
+		o.revision = r
+	}
+	c.queue.Add(o)
+}
+
 func (c *ctrl) Run() error {
 	c.m.Lock()
 	if c.res == nil {
@@ -108,16 +123,16 @@ func (c *ctrl) Run() error {
 		c.error = multierr.Append(c.error, errors.New("already running"))
 	}
 	if err := c.store.Register(c.ctx, c.res, &reconcile.InformerFunc{
-		OnCreateFunc: func(new object.Any) error {
-			c.queue.Add(new)
+		OnCreateFunc: func(ctx context.Context, new object.Any) error {
+			c.add(ctx, new)
 			return nil
 		},
-		OnUpdateFunc: func(new object.Any, old object.Any) error {
-			c.queue.Add(new)
+		OnUpdateFunc: func(ctx context.Context, new object.Any, old object.Any) error {
+			c.add(ctx, new)
 			return nil
 		},
-		OnDeleteFunc: func(old object.Any) error {
-			c.queue.Add(old)
+		OnDeleteFunc: func(ctx context.Context, old object.Any) error {
+			c.add(ctx, old)
 			return nil
 		},
 	}, reconcile.WithList(true)); err != nil {
@@ -159,7 +174,15 @@ func (c *ctrl) Run() error {
 			}
 			guard <- struct{}{}
 			go func(i interface{}) {
-				r, err := c.reconciler.Reconcile(c.ctx, i)
+				o, ok := i.(objectWithRevision)
+				if !ok {
+					panic(fmt.Sprintf("unexpected object type in queue: %T", i))
+				}
+				ctx := c.ctx
+				if o.revision != 0 {
+					ctx = storage.CtxWithRevision(ctx, o.revision)
+				}
+				r, err := c.reconciler.Reconcile(ctx, o.object)
 				if err != nil || r.Requeue {
 					c.queue.AddAfter(item, r.RequeueAfter)
 				}

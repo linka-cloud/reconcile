@@ -78,6 +78,7 @@ func TestStorage(t *testing.T) {
 		require.Len(l, 1)
 		assert.Equal(o, l[0])
 		require.NoError(s.Update(ctx, &Data{ID: id, Value: 43}))
+		require.ErrorIs(s.Update(CtxWithRevision(ctx, 0), &Data{ID: id, Value: 42}), ErrNotLatestRevision)
 		require.NoError(s.Delete(ctx, o))
 		require.Error(s.Update(ctx, o))
 	}()
